@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="de" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAT Zuteilungsanwendung</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Text:wght@400;500;700&family=Source+Serif+4:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="GAT_Zuteilung.css">
+  <script>try{var t=localStorage.getItem("gat_theme");if(t)document.documentElement.dataset.theme=t;}catch(_){}</script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div class="hero-content">
+        <div>
+          <span class="hero-kicker">Schulverwaltung &middot; GAT</span>
+          <h1>GAT Zuteilungsanwendung</h1>
+          <p>Verwaltung und automatische Zuteilung für den Garbenarbeitstag in einer einzigen Datei ohne Server.</p>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <strong id="stat-total">0</strong>
+            <span>Schüler gesamt</span>
+          </div>
+          <div class="hero-stat">
+            <strong id="stat-absent">0</strong>
+            <span>Abwesend</span>
+          </div>
+          <div class="hero-stat">
+            <strong id="stat-ag">0</strong>
+            <span>AG-Mitglieder</span>
+          </div>
+        </div>
+      </div>
+      <button type="button" id="theme-toggle" data-action="toggle-theme" aria-label="Farbschema wechseln" title="Light / Dark wechseln">
+        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </header>
+
+    <nav class="step-nav" aria-label="Arbeitsschritte">
+      <button type="button" class="active" data-action="goto-step" data-step="1">1. Schüler</button>
+      <button type="button" data-action="goto-step" data-step="2">2. Projekte</button>
+      <button type="button" data-action="goto-step" data-step="3">3. Zuteilung</button>
+      <button type="button" data-action="goto-step" data-step="4">4. Manuell</button>
+      <button type="button" data-action="goto-step" data-step="5">5. PDF</button>
+    </nav>
+
+    <div id="message-box" class="message-box"></div>
+
+    <section id="step-1" class="step-panel active">
+      <div class="panel-top">
+        <div>
+          <h2>Schritt 1: Schüler importieren</h2>
+          <p>CSV einlesen, filtern und Kennzeichen für Abwesenheit oder AG setzen.</p>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="btn-csv-trigger">CSV / XLSX auswählen</button>
+          <input id="csv-input" type="file" accept=".csv,.xlsx,text/csv" hidden>
+        </div>
+      </div>
+
+      <!-- Sub-Tabs -->
+      <div class="step1-tabs">
+        <button type="button" class="step1-tab active" data-action="step1-tab" data-tab="students">Schüler</button>
+        <button type="button" class="step1-tab" data-action="step1-tab" data-tab="aglists">AG-Listen &amp; Sonder</button>
+      </div>
+
+      <!-- Tab: Schuelerliste -->
+      <div id="step1-students" class="step1-section active">
+        <div class="controls-grid">
+          <label>Suche
+            <input id="student-search" type="text" placeholder="Name oder Klasse suchen">
+          </label>
+          <label>Filter Klasse
+            <select id="class-filter"></select>
+          </label>
+          <label>Filter Klassenstufe
+            <select id="grade-filter">
+              <option value="all">Alle</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="step1-counts" class="summary-card"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Vorname</th>
+                <th>Nachname</th>
+                <th>Klasse</th>
+                <th>Stufe</th>
+                <th>Abwesend / eingeschränkt</th>
+                <th>AG-Mitglied</th>
+                <th>AG-Projektname</th>
+                <th>AG-Slots</th>
+              </tr>
+            </thead>
+            <tbody id="students-body"></tbody>
+          </table>
+        </div>
+        <div class="footer-note">AG-Schüler werden aus der normalen Zuteilung ausgeschlossen und können mehrere AG-Slots bekommen.</div>
+      </div><!-- /step1-students -->
+
+      <!-- Tab: AG-Listen & Sonder -->
+      <div id="step1-aglists" class="step1-section">
+        <div id="step1-aglist-board"></div>
+      </div><!-- /step1-aglists -->
+    </section>
+
+    <section id="step-2" class="step-panel">
+      <div class="panel-top">
+        <div>
+          <h2>Schritt 2: Projekte konfigurieren</h2>
+          <p>Projekte anlegen, Slot-Bedarfe je Stufe pflegen und optionale Klassenpräferenzen setzen.</p>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="primary" data-action="add-project">Projekt hinzufügen</button>
+          <button type="button" data-action="load-samples">Beispieldaten laden</button>
+          <button type="button" class="danger" data-action="reset-projects">Alle Projekte zurücksetzen</button>
+        </div>
+      </div>
+
+      <div id="projects-container" class="project-list"></div>
+      <div id="demand-summary" class="summary-card"></div>
+    </section>
+
+    <section id="step-3" class="step-panel">
+      <div class="panel-top">
+        <div>
+          <h2>Schritt 3: Zuteilung generieren</h2>
+          <p>Verfügbarkeiten prüfen, Konflikte anzeigen und zufällige Zuteilung starten.</p>
+        </div>
+        <div class="btn-row">
+          <button id="btn-generate" type="button" class="primary" data-action="generate">Zuteilung generieren</button>
+        </div>
+      </div>
+
+      <div id="overview-step3" class="summary-card"></div>
+      <div id="conflicts-step3" class="summary-card"></div>
+
+      <div class="summary-card">
+        <h3>Vorschau aktuelle Zuteilung</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Schüler</th>
+                <th>Klasse</th>
+                <th>Projekt</th>
+                <th>Slot</th>
+              </tr>
+            </thead>
+            <tbody id="preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="step-4" class="step-panel">
+      <div class="panel-top">
+        <div>
+          <h2>Schritt 4: Manuell überarbeiten</h2>
+          <p>Schüler per Drag-and-Drop oder per Dialog umtragen und den Zwischenstand als JSON sichern.</p>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="warn" data-action="regenerate">Neu generieren</button>
+          <button type="button" data-action="save-json">Als JSON speichern</button>
+          <button type="button" id="btn-json-trigger">JSON laden</button>
+          <input id="json-input" type="file" accept="application/json,.json" hidden>
+          <button type="button" class="danger" data-action="clear-storage" title="Gespeicherten Zustand im Browser löschen">Speicher löschen</button>
+        </div>
+      </div>
+
+      <!-- Board-Tabs -->
+      <div class="board-tabs">
+        <button class="board-tab active" data-action="switch-board" data-board="regular">Reguläre Zuteilung</button>
+        <button class="board-tab" data-action="switch-board" data-board="ag">AG-Verwaltung</button>
+      </div>
+
+      <!-- Normales Board -->
+      <div id="board-regular" class="board-section active">
+        <div id="board-left-col">
+          <div id="step4-filter-bar" class="step4-filter-bar">
+            <input id="step4-search" type="text" placeholder="Schüler suchen…" autocomplete="off">
+            <select id="step4-grade-filter">
+              <option value="all">Alle Stufen</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+            <select id="step4-class-filter">
+              <option value="all">Alle Klassen</option>
+            </select>
+            <button type="button" id="step4-filter-reset" title="Filter zurücksetzen">✕ Zurücksetzen</button>
+          </div>
+          <div id="manual-board" class="slot-board"></div>
+        </div>
+        <div class="unassigned-wrap">
+          <h3>Übrig / Nicht zugeteilt <span id="unassigned-count" class="status-pill warn" style="display:none;"></span></h3>
+          <div id="unassigned-zone" class="dropzone" data-dropzone="true" data-target-project-id="" data-target-slot=""></div>
+        </div>
+      </div>
+
+      <!-- AG-Board -->
+      <div id="board-ag" class="board-section">
+        <div class="panel-top" style="margin-bottom:0;">
+          <div>
+            <p class="tiny">AGs per Drag-and-Drop neu gruppieren. Klick auf einen Chip öffnet die Bearbeitung.</p>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="primary" data-action="add-ag-project">AG hinzufügen</button>
+          </div>
+        </div>
+        <div id="ag-board" class="ag-board"></div>
+        <div class="ag-unassigned-wrap">
+          <h3>Ohne AG-Zuteilung <span id="unassigned-ag-count" class="status-pill warn" style="display:none;"></span></h3>
+          <div id="unassigned-ag-zone" class="ag-dropzone" data-dropzone="true" data-ag-project=""></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="step-5" class="step-panel">
+      <div class="panel-top">
+        <div>
+          <h2>Schritt 5: PDF exportieren</h2>
+          <p>Export als Projektliste oder Klassenliste mit optionalem Header, Datum und Seitennummern.</p>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="primary" data-action="export-project-pdf">PDF nach Projekt</button>
+          <button type="button" class="primary" data-action="export-class-pdf">PDF nach Klasse</button>
+          <button type="button" data-action="export-xlsx">XLSX exportieren</button>
+        </div>
+      </div>
+
+      <div class="option-grid">
+        <label class="checkbox-row">
+          <input type="checkbox" id="opt-header" checked>
+          Schulname / Header anzeigen
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="opt-date" checked>
+          Datum anzeigen
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="opt-pages" checked>
+          Seitennummern anzeigen
+        </label>
+      </div>
+
+      <div class="controls-grid">
+        <label>Schulname / Headertext
+          <input id="school-header" type="text" value="Schule - Garbenarbeitstag">
+        </label>
+        <label>Projekt-Reihenfolge
+          <select id="project-order">
+            <option value="id">Nach Projektnummer</option>
+            <option value="name">Alphabetisch nach Name</option>
+          </select>
+        </label>
+        <div class="inline-field">
+          <span>Hinweis</span>
+          <div class="tiny">Abwesende erscheinen nur in PDF nach Klasse. AG-Mitglieder erscheinen in beiden Exporten mit AG-Kennzeichnung.</div>
+        </div>
+      </div>
+
+      <div id="export-summary" class="summary-card"></div>
+    </section>
+  </div>
+
+  <div id="conflict-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <h3 id="conflict-title">Warnung</h3>
+      <p id="conflict-subtitle" class="tiny"></p>
+      <ul id="conflict-list" class="list-plain"></ul>
+      <div class="modal-actions">
+        <button type="button" data-action="close-conflict-modal">Zurück und anpassen</button>
+        <button type="button" class="primary" data-action="confirm-conflict-modal">Trotzdem fortfahren</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="move-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 520px;">
+      <h3>Schüler manuell umtragen</h3>
+      <p id="move-student-label" class="tiny"></p>
+      <div class="controls-grid" style="grid-template-columns: 1fr;">
+        <label>Projekt
+          <select id="move-project-select"></select>
+        </label>
+        <label>Slot
+          <select id="move-slot-select">
+            <option value="S1">S1</option>
+            <option value="S2">S2</option>
+            <option value="S3">S3</option>
+            <option value="S4">S4</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" data-action="close-move-modal">Abbrechen</button>
+        <button type="button" class="primary" data-action="confirm-move">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ag-edit-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 500px;">
+      <h3>AG-Zuteilung bearbeiten</h3>
+      <p id="ag-edit-student-label" class="tiny"></p>
+      <div class="controls-grid" style="grid-template-columns: 1fr; margin-top: 10px;">
+        <label class="inline-field">AG-Projekt
+          <div class="ag-name-input-wrap">
+            <input
+              id="ag-edit-project-input"
+              type="text"
+              list="ag-edit-projects-list"
+              placeholder="AG-Projekte tippen oder wählen"
+            >
+            <datalist id="ag-edit-projects-list"></datalist>
+          </div>
+        </label>
+      </div>
+      <div style="margin-top: 12px;">
+        <div class="tiny" style="margin-bottom:6px; font-weight:700;">Slots (mind. einer aktiv)</div>
+        <div class="ag-edit-slots" id="ag-edit-slots">
+          <label><input type="checkbox" id="ag-edit-s1" value="S1"> S1</label>
+          <label><input type="checkbox" id="ag-edit-s2" value="S2"> S2</label>
+          <label><input type="checkbox" id="ag-edit-s3" value="S3"> S3</label>
+          <label><input type="checkbox" id="ag-edit-s4" value="S4"> S4</label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="danger" data-action="remove-from-ag">Aus AG entfernen</button>
+        <button type="button" data-action="close-ag-edit-modal">Abbrechen</button>
+        <button type="button" class="primary" data-action="confirm-ag-edit">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="GAT_Zuteilung.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /l/GAT ; python3 -c \"\nimport re\nfor fname in \\['GAT_Zuteilung\\.html', 'GAT_Zuteilung\\.js'\\]:\n    with open\\(fname, encoding='utf-8'\\) as f:\n        content = f\\.read\\(\\)\n    # Find 'fuer' as standalone word \\(not in camelCase\\)\n    hits = re\\.findall\\(r'\\(\\?<=\\[\\^a-zA-Z\\]\\)fuer\\(\\?=\\[\\^a-zA-Z\\]\\)', content\\)\n    print\\(f'\\{fname\\}: \\{len\\(hits\\)\\} standalone fuer occurrences'\\)\n    if hits:\n        for m in re\\.finditer\\(r'\\(\\?<=\\[\\^a-zA-Z\\]\\)fuer\\(\\?=\\[\\^a-zA-Z\\]\\)', content\\):\n            start = max\\(0, m\\.start\\(\\)-20\\)\n            print\\(f'  \\.\\.\\.\\{content\\[start:m\\.end\\(\\)\\+20\\]\\}\\.\\.\\.'\\)\n\"\n$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
