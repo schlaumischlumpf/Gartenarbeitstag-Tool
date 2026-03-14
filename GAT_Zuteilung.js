@@ -3138,11 +3138,12 @@
               </button>
             `).join("")}
           `;
+          ctxMenu.style.left = `${e.clientX + 2}px`;
+          ctxMenu.style.top = `${e.clientY + 2}px`;
           ctxMenu.style.display = "block";
-          const x = Math.min(e.pageX, window.innerWidth - ctxMenu.offsetWidth - 8);
-          const y = Math.min(e.pageY, window.innerHeight + window.scrollY - ctxMenu.offsetHeight - 8);
-          ctxMenu.style.left = `${x}px`;
-          ctxMenu.style.top = `${y}px`;
+          const rect = ctxMenu.getBoundingClientRect();
+          if (rect.right > window.innerWidth) ctxMenu.style.left = `${e.clientX - rect.width - 2}px`;
+          if (rect.bottom > window.innerHeight) ctxMenu.style.top = `${e.clientY - rect.height - 2}px`;
         });
 
         document.addEventListener("pointerdown", (e) => {
