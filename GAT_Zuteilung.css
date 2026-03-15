@@ -970,27 +970,37 @@ tbody tr:hover td { background: var(--surface-0); }
 }
 
 .board-section { display: none; }
-.board-section.active { display: block; }
+
+#board-regular.active,
+#board-ag.active,
+#board-sonder.active {
+  display: grid;
+}
 
 /* ── Step 4: sidebar layout — "Nicht zugeteilt" right, board left ── */
 
-#board-regular {
-  display: grid;
+#board-regular,
+#board-ag,
+#board-sonder {
   grid-template-columns: 1fr 260px;
   gap: 24px;
   align-items: start;
 }
 
-/* Left column: filter bar + project board stacked */
-#board-left-col {
+/* Left columns: stacked flex */
+#board-left-col,
+#board-ag-left-col,
+#board-sonder-left-col {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
 
-/* Unassigned sidebar: column 2, sticky */
-#board-regular .unassigned-wrap {
+/* Unassigned sidebar: column 2, sticky — all boards */
+#board-regular .unassigned-wrap,
+#board-ag .unassigned-wrap,
+#board-sonder .unassigned-wrap {
   grid-column: 2;
   position: sticky;
   top: 52px;
@@ -999,9 +1009,9 @@ tbody tr:hover td { background: var(--surface-0); }
   margin-top: 0;
 }
 
-/* Sonder-zone: column 2 */
-#board-regular #sonder-zone-wrap {
-  grid-column: 2;
+/* Filter bar: standalone between tabs and board */
+#step4-filter-bar {
+  margin-bottom: 12px;
 }
 
 /* ── Step 4: filter bar ─────────────────────────────────────────── */
@@ -1049,8 +1059,8 @@ tbody tr:hover td { background: var(--surface-0); }
 }
 
 .slot-board {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1203,16 +1213,30 @@ tbody tr:hover td { background: var(--surface-0); }
 
 /* AG-Board */
 .ag-board {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   margin-bottom: 20px;
+}
+
+/* AG-Projektkarte (Drop-Zone für gesamte Karte) */
+.ag-project-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow .15s, border-color .15s;
+}
+.ag-project-card:hover { box-shadow: var(--shadow-sm); }
+.ag-project-card.over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--glow);
 }
 
 .ag-card {
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   border-radius: var(--r-lg);
   overflow: hidden;
   box-shadow: var(--shadow-xs);
@@ -1228,11 +1252,66 @@ tbody tr:hover td { background: var(--surface-0); }
   gap: 8px;
 }
 
+.ag-card-body {
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 48px;
+}
+
 .ag-card-title {
   font-size: .8rem;
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
+}
+
+/* Slot-Grid innerhalb einer AG-Karte */
+.ag-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ag-slot-col {
+  border-right: 1px solid var(--border);
+  min-height: 70px;
+}
+.ag-slot-col:last-child { border-right: none; }
+
+.ag-slot-col > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--surface-0);
+  border-bottom: 1px solid var(--border);
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ag-slot-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.ag-slot-col .ag-slot-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .ag-dropzone {
@@ -1247,6 +1326,8 @@ tbody tr:hover td { background: var(--surface-0); }
 }
 
 .ag-dropzone.over { background: var(--accent-subtle); border-color: var(--accent); }
+
+.ag-slot-body.over { background: var(--accent-subtle); border-radius: var(--r-sm); outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .ag-name-input-wrap { width: 100%; }
 
@@ -1372,15 +1453,20 @@ h3 {
 /* ── 20. Responsive ─────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
-  #board-regular { grid-template-columns: 1fr 220px; }
+  #board-regular,
+  #board-ag,
+  #board-sonder { grid-template-columns: 1fr 220px; }
 }
 
 @media (max-width: 860px) {
-  #board-regular {
+  #board-regular,
+  #board-ag,
+  #board-sonder {
     grid-template-columns: 1fr;
   }
   #board-regular .unassigned-wrap,
-  #board-regular #sonder-zone-wrap {
+  #board-ag .unassigned-wrap,
+  #board-sonder .unassigned-wrap {
     grid-column: 1;
     position: static;
     max-height: none;
@@ -1395,23 +1481,25 @@ h3 {
   .hero-stats { gap: 6px; }
   .hero-stat  { min-width: 80px; padding: 10px 14px; }
   .panel-top  { flex-direction: column; }
-  .slot-board { grid-template-columns: 1fr; }
-  .ag-board   { grid-template-columns: 1fr; }
+  .ag-slot-grid { grid-template-columns: repeat(2, 1fr); }
   .modal-card { padding: 20px; }
   .controls-grid { grid-template-columns: 1fr; }
 }
 
 /* ── 21. Smooth theme transitions ───────────────────────────────── */
+/* Transitions nur aktivieren während des Theme-Wechsels (per JS-Klasse),
+   damit normales Interagieren kein Performance-Overhead hat.           */
 
-body,
-.summary-card, .project-card, .slot-project, .ag-card,
-.aglist-card, .aglist-pool, .modal-card, .hero-stat,
-input, select, textarea, button, table, th, td {
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
   transition:
-    background var(--t),
-    border-color var(--t),
-    color var(--t),
-    box-shadow var(--t);
+    background-color 0.3s ease,
+    background 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.3s ease,
+    fill 0.3s ease !important;
 }
 
 /* ── 22. Board — Slot Layout (JS-generated classes) ─────────────── */
@@ -1426,11 +1514,6 @@ input, select, textarea, button, table, th, td {
 }
 
 .slot-project:hover { box-shadow: var(--shadow-sm); }
-
-.slot-project.is-special {
-  border-left: 3px solid var(--warn);
-  background: var(--warn-subtle);
-}
 
 .slot-project > h3 {
   font-size: .9rem;
@@ -1449,7 +1532,7 @@ input, select, textarea, button, table, th, td {
 
 .slot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .slot-col {

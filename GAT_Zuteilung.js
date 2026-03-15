@@ -17,6 +17,7 @@
         agProjects: [],
         agLists: [],
         agExtra: {},
+        slotPriorities: {},
         activeStep1Tab: "students",
         filters: {
           search: "",
@@ -249,7 +250,7 @@
         const projectIds = new Set(state.projects.map((project) => project.id));
 
         for (const [studentId, assignment] of Object.entries(state.assignments)) {
-          if (!assignableIds.has(studentId)) {
+          if (!assignableIds.has(studentId) && !isSonderStudent(getStudentById(studentId))) {
             delete state.assignments[studentId];
             continue;
           }
@@ -921,9 +922,61 @@
         `).join("");
       }
 
+      function renderStep3Priorities() {
+        const container = byId("slot-priorities-step3");
+        if (!container) {
+          return;
+        }
+
+        const classesByGrade = {};
+        for (const grade of GRADES) {
+          classesByGrade[grade] = [...new Set(
+            state.students
+              .filter((s) => s.grade === grade)
+              .map((s) => s.className)
+              .filter(Boolean)
+          )].sort();
+        }
+
+        const anyClasses = GRADES.some((g) => classesByGrade[g].length > 0);
+        if (!anyClasses) {
+          container.innerHTML = `
+            <h3>Slot-Klassenprioritäten</h3>
+            <p class="tiny">Keine Schüler importiert – bitte zuerst Schüler in Schritt 1 importieren.</p>
+          `;
+          return;
+        }
+
+        const slotHeaders = SLOTS.map((s) => `<th>${s}</th>`).join("");
+        const gridRows = GRADES.map((grade) => {
+          const cells = SLOTS.map((slot) => {
+            const current = (state.slotPriorities[grade] || {})[slot] || "";
+            const classes = classesByGrade[grade];
+            const options = [
+              `<option value="">— Keine —</option>`,
+              ...classes.map((cn) => `<option value="${escapeHtml(cn)}"${current === cn ? " selected" : ""}>${escapeHtml(cn)}</option>`)
+            ].join("");
+            return `<td><select class="priority-select" data-priority-grade="${grade}" data-priority-slot="${escapeHtml(slot)}">${options}</select></td>`;
+          }).join("");
+          return `<tr><td class="priority-grade-label"><strong>Stufe ${grade}</strong></td>${cells}</tr>`;
+        }).join("");
+
+        container.innerHTML = `
+          <h3>Slot-Klassenprioritäten</h3>
+          <p class="tiny">Wähle pro Klassenstufe und Slot eine Klasse, die zuerst zugeteilt wird – bevor der Rest per Round-Robin verteilt wird. Hilfreich, wenn z.B. 9N in Slot 4 bevorzugt eingeteilt werden soll.</p>
+          <div class="table-wrap" style="margin-top: 12px;">
+            <table>
+              <thead><tr><th>Stufe</th>${slotHeaders}</tr></thead>
+              <tbody>${gridRows}</tbody>
+            </table>
+          </div>
+        `;
+      }
+
       function renderStep3() {
         renderStep3Overview();
         renderStep3Conflicts();
+        renderStep3Priorities();
         renderPreviewTable();
       }
 
@@ -962,7 +1015,10 @@
         const cls    = byId("step4-class-filter")?.value ?? "all";
         const active = !!(search || grade !== "all" || cls !== "all");
 
-        document.querySelectorAll("#board-left-col .student-chip").forEach((chip) => {
+        const activeBoard = document.querySelector(".board-section.active");
+        if (!activeBoard) return;
+
+        activeBoard.querySelectorAll(".student-chip").forEach((chip) => {
           if (!active) {
             chip.classList.remove("chip-highlight", "chip-dimmed");
             return;
@@ -983,104 +1039,136 @@
         });
       }
 
+      /** Rendert eine Projektkarte mit 4 Slot-Spalten (shared by regular + sonder board). */
+      function renderBoardProjectCard(project, slotMap) {
+        const slotColumns = SLOTS.map((slot) => {
+          const students = slotMap[project.id][slot] || [];
+          const capacity = GRADES.reduce((sum, g) => sum + safeInt(project.demands?.[g]?.[slot]), 0);
+          const fillClass = capacity === 0
+            ? ""
+            : students.length < capacity
+              ? "status-warn"
+              : students.length === capacity
+                ? "status-ok"
+                : "status-err";
+          return `
+            <section class="slot-col">
+              <header>
+                <span>${slot}</span>
+                <span class="${fillClass}">${students.length} / ${capacity}</span>
+              </header>
+              <div class="dropzone" data-dropzone="true" data-target-project-id="${escapeHtml(project.id)}" data-target-slot="${slot}">
+                ${students.length ? students.map(renderStudentChip).join("") : "<div class='tiny'>Leer</div>"}
+              </div>
+            </section>
+          `;
+        }).join("");
+        const specialBadge = project.isSpecial ? " <span class='special-project-badge'>Sonder</span>" : "";
+        return `
+          <article class="slot-project${project.isSpecial ? " is-special" : ""}">
+            <h3>${escapeHtml(String(project.number))} - ${escapeHtml(project.name)}${specialBadge}</h3>
+            <div class="slot-grid">${slotColumns}</div>
+          </article>
+        `;
+      }
+
       function renderStep4Board() {
         const board = byId("manual-board");
         const slotMap = buildProjectSlotMap();
 
-        if (!state.projects.length) {
-          board.innerHTML = "<div class='summary-card tiny'>Es sind keine Projekte vorhanden.</div>";
+        const regularProjects = [...state.projects]
+          .filter((p) => !p.isSpecial)
+          .sort((a, b) => a.number - b.number || a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+
+        if (!regularProjects.length) {
+          board.innerHTML = "<div class='summary-card tiny'>Es sind keine regulären Projekte vorhanden.</div>";
           byId("unassigned-zone").innerHTML = "";
-          return;
+        } else {
+          board.innerHTML = regularProjects.map((p) => renderBoardProjectCard(p, slotMap)).join("");
         }
-
-        const sortedProjects = [...state.projects].sort((a, b) => a.number - b.number || a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
-        const regularProjects = sortedProjects.filter((p) => !p.isSpecial);
-        const specialProjects = sortedProjects.filter((p) => p.isSpecial);
-
-        const renderProjectSlots = (project) => {
-          const slotColumns = SLOTS.map((slot) => {
-            const students = slotMap[project.id][slot] || [];
-            const capacity = GRADES.reduce((sum, g) => sum + safeInt(project.demands?.[g]?.[slot]), 0);
-            const fillClass = capacity === 0
-              ? ""
-              : students.length < capacity
-                ? "status-warn"
-                : students.length === capacity
-                  ? "status-ok"
-                  : "status-err";
-            return `
-              <section class="slot-col">
-                <header>
-                  <span>${slot}</span>
-                  <span class="${fillClass}">${students.length} / ${capacity}</span>
-                </header>
-                <div class="dropzone" data-dropzone="true" data-target-project-id="${escapeHtml(project.id)}" data-target-slot="${slot}">
-                  ${students.length ? students.map(renderStudentChip).join("") : "<div class='tiny'>Leer</div>"}
-                </div>
-              </section>
-            `;
-          }).join("");
-          const specialBadge = project.isSpecial ? " <span class='special-project-badge'>Sonder</span>" : "";
-          return `
-            <article class="slot-project${project.isSpecial ? " is-special" : ""}">
-              <h3>${escapeHtml(String(project.number))} - ${escapeHtml(project.name)}${specialBadge}</h3>
-              <div class="slot-grid">${slotColumns}</div>
-            </article>
-          `;
-        };
-
-        board.innerHTML = regularProjects.map(renderProjectSlots).join("");
 
         const unassigned = getUnassignedStudents()
-          .filter((s) => !isSonderStudent(s))
+          .filter((s) => !s.agMember && !isSonderStudent(s))
           .sort(compareStudentsByClassLast);
         const countEl = byId("unassigned-count");
-        if (unassigned.length > 0) {
-          countEl.textContent = String(unassigned.length);
-          countEl.style.display = "inline-block";
-        } else {
-          countEl.style.display = "none";
-        }
+        countEl.textContent = String(unassigned.length);
+        countEl.style.display = unassigned.length > 0 ? "inline-block" : "none";
         byId("unassigned-zone").innerHTML = unassigned.length
           ? unassigned.map(renderStudentChip).join("")
           : "<div class='tiny'>Keine übrigen Schüler.</div>";
 
-        // Sonder-Schüler Block (unter der Übrig-Zone im HTML)
-        const sonderStudents = state.students
-          .filter((s) => isSonderStudent(s) && !s.absent)
-          .sort(compareStudentsByClassLast);
-        let sonderEl = byId("sonder-zone-wrap");
-        if (!sonderEl) {
-          const wrapper = byId("board-regular");
-          sonderEl = document.createElement("div");
-          sonderEl.id = "sonder-zone-wrap";
-          wrapper.appendChild(sonderEl);
+        renderStep4ClassFilter();
+        applyStep4Filter();
+      }
+
+      function renderSonderBoard() {
+        const board = byId("sonder-board");
+        if (!board) return;
+        const slotMap = buildProjectSlotMap();
+
+        const specialProjects = [...state.projects]
+          .filter((p) => p.isSpecial)
+          .sort((a, b) => a.number - b.number || a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+
+        const sonderLists = state.agLists.filter((l) => l.isSpecial);
+
+        const projectHtml = specialProjects.length
+          ? specialProjects.map((p) => renderBoardProjectCard(p, slotMap)).join("")
+          : "";
+
+        const listHtml = sonderLists.map((list) => {
+          const members = state.students
+            .filter((s) => s.agMember && !s.absent && s.agProjectName === list.name)
+            .sort(compareStudentsByClassLast);
+          const slotCols = SLOTS.map((slot) => {
+            const inSlot = members.filter((s) => s.agSlots?.[slot]);
+            return `
+              <section class="ag-slot-col">
+                <header>
+                  <span>${slot}</span>
+                  <span class="ag-slot-count">${inSlot.length}</span>
+                </header>
+                <div class="ag-slot-body" data-dropzone="true" data-sonder-list-id="${escapeHtml(list.id)}" data-target-slot="${slot}">
+                  ${inSlot.length
+                    ? inSlot.map((s) => renderAgChip(s, false)).join("")
+                    : "<div class='tiny' style='opacity:.5;'>–</div>"}
+                </div>
+              </section>
+            `;
+          }).join("");
+          return `
+            <article class="ag-project-card is-special">
+              <div class="ag-card-head">
+                <span class="ag-card-title">${escapeHtml(list.name)}</span>
+                <span class="aglist-type-badge sonder">Sonder</span>
+                <span class="tiny" style="color:var(--text-muted);">${members.length} Schüler</span>
+              </div>
+              <div class="ag-slot-grid">${slotCols}</div>
+            </article>
+          `;
+        }).join("");
+
+        if (!projectHtml && !listHtml) {
+          board.innerHTML = "<div class='summary-card tiny'>Keine Sonderprojekte oder Sonderlisten vorhanden.</div>";
+        } else {
+          board.innerHTML = projectHtml + listHtml;
         }
 
-        if (specialProjects.length > 0 || sonderStudents.length > 0) {
-          sonderEl.innerHTML = `
-            <div class="sonder-wrap">
-              <h3>Sonder-Schüler &amp; Sonderprojekte
-                ${sonderStudents.length > 0 ? `<span class="status-pill warn" style="margin-left:8px;">${sonderStudents.length}</span>` : ""}
-              </h3>
-              <div class="tiny" style="margin-bottom:10px;">Sonder-Schüler können nur in Sonderprojekte (blau) eingetragen werden.</div>
-              ${specialProjects.map(renderProjectSlots).join("")}
-              <div class="sonder-wrap" style="margin-top:10px;">
-                <h3 style="font-size:.85rem; margin:0 0 7px;">Nicht zugeteilt (Sonder)</h3>
-                <div class="dropzone" data-dropzone="true" data-target-project-id="" data-target-slot="" id="sonder-unassigned-zone">
-                  ${sonderStudents.length
-                    ? sonderStudents.map((s) => `<div class='sonder-chip'>${renderStudentChip(s)}</div>`).join("")
-                    : "<div class='tiny'>Keine ausstehenden Sonder-Schüler.</div>"}
-                </div>
-              </div>
-            </div>
-          `;
-          sonderEl.style.display = "block";
-        } else {
-          sonderEl.innerHTML = "";
-          sonderEl.style.display = "none";
+        const sonderStudents = state.students
+          .filter((s) => isSonderStudent(s) && !s.absent && !state.assignments[s.id])
+          .sort(compareStudentsByClassLast);
+        const countEl = byId("unassigned-sonder-count");
+        if (countEl) {
+          countEl.textContent = String(sonderStudents.length);
+          countEl.style.display = sonderStudents.length > 0 ? "inline-block" : "none";
         }
-        renderStep4ClassFilter();
+        const zone = byId("unassigned-sonder-zone");
+        if (zone) {
+          zone.innerHTML = sonderStudents.length
+            ? sonderStudents.map((s) => `<div class='sonder-chip'>${renderStudentChip(s)}</div>`).join("")
+            : "<div class='tiny'>Keine ausstehenden Sonder-Schüler.</div>";
+        }
+
         applyStep4Filter();
       }
 
@@ -1088,6 +1176,8 @@
         renderStep4Board();
         if (state.activeBoard === "ag") {
           renderAgBoard();
+        } else if (state.activeBoard === "sonder") {
+          renderSonderBoard();
         }
       }
 
@@ -1175,19 +1265,28 @@
 
       // ── AG-Verwaltung ──────────────────────────────────────────────────
 
-      /** Gibt alle bekannten AG-Projektnamen zurück (aus Schülerdaten + explizit angelegten). */
+      /** Gibt alle bekannten AG-Projektnamen zurück (aus Schülerdaten + explizit angelegten).
+       *  Sonderlisten (isSpecial) werden ausgeschlossen — sie erscheinen im Sonder-Tab. */
       function getAGProjectNames() {
+        const sonderNames = new Set(
+          state.agLists.filter((l) => l.isSpecial).map((l) => l.name)
+        );
         const fromStudents = state.students
-          .filter((student) => student.agMember && student.agProjectName.trim())
+          .filter((student) => student.agMember && student.agProjectName.trim() && !sonderNames.has(student.agProjectName.trim()))
           .map((student) => student.agProjectName.trim());
-        const all = [...new Set([...state.agProjects, ...fromStudents])];
+        const all = [...new Set([
+          ...state.agProjects.filter((name) => !sonderNames.has(name)),
+          ...fromStudents
+        ])];
         return all.sort((a, b) => a.localeCompare(b, "de", { sensitivity: "base" }));
       }
 
-      /** Rendert einen einzelnen AG-Schüler-Chip. */
-      function renderAgChip(student) {
+      /** Rendert einen einzelnen AG-Schüler-Chip. showSlots=false in den Slot-Spalten-Ansichten. */
+      function renderAgChip(student, showSlots = true) {
         const slots = getSelectedAgSlots(student);
-        const slotTags = slots.map((slot) => `<span class="ag-slot-tag">${slot}</span>`).join("");
+        const slotTags = showSlots
+          ? slots.map((slot) => `<span class="ag-slot-tag">${slot}</span>`).join("")
+          : "";
         return `
           <button
             type="button"
@@ -1206,7 +1305,7 @@
         `;
       }
 
-      /** Rendert das komplette AG-Board und die Nicht-zugeordnet-Zone. */
+      /** Rendert das komplette AG-Board mit Slot-Spalten je AG. */
       function renderAgBoard() {
         const board = byId("ag-board");
         if (!board) {
@@ -1216,14 +1315,19 @@
 
         board.innerHTML = agNames.length
           ? agNames.map((name) => {
-              const students = state.students.filter(
-                (student) => student.agMember && !student.absent && student.agProjectName.trim() === name
+              const allStudents = state.students.filter(
+                (s) => s.agMember && !s.absent && s.agProjectName.trim() === name
               ).sort(compareStudentsByClassLast);
+
               return `
-                <article class="ag-project-card">
+                <article
+                  class="ag-project-card"
+                  data-dropzone="true"
+                  data-ag-project="${escapeHtml(name)}"
+                >
                   <div class="ag-card-head">
                     <span class="ag-card-title">${escapeHtml(name)}</span>
-                    <span class="tiny" style="margin-right:4px;">${students.length} ${students.length === 1 ? "Schüler" : "Schüler"}</span>
+                    <span class="tiny" style="color:var(--text-muted);">${allStudents.length} Schüler</span>
                     <button
                       type="button"
                       class="danger"
@@ -1233,14 +1337,10 @@
                       title="AG-Projekt entfernen (Schüler bleiben AG-Mitglieder)"
                     >&#x2715;</button>
                   </div>
-                  <div
-                    class="ag-dropzone"
-                    data-dropzone="true"
-                    data-ag-project="${escapeHtml(name)}"
-                  >
-                    ${students.length
-                      ? students.map(renderAgChip).join("")
-                      : "<div class='tiny'>Keine Schüler. Per Drag-and-Drop hierher ziehen.</div>"}
+                  <div class="ag-card-body">
+                    ${allStudents.length
+                      ? allStudents.map((s) => renderAgChip(s)).join("")
+                      : "<div class='tiny' style='opacity:.5;'>–</div>"}
                   </div>
                 </article>
               `;
@@ -1278,6 +1378,22 @@
         renderAgBoard();
         renderStep1();
         renderStep5();
+      }
+
+      /** Verschiebt einen Sonder-Schüler in einen anderen Slot seiner Sonderliste. */
+      function moveSonderStudentToSlot(studentId, listId, targetSlot) {
+        const student = getStudentById(studentId);
+        const list = state.agLists.find((l) => l.id === listId);
+        if (!student || !list || !SLOTS.includes(targetSlot)) return;
+        if (!student.agMember || student.agProjectName !== list.name) {
+          showMessage("Schüler gehört nicht zu dieser Sonderliste.", "warn");
+          return;
+        }
+        SLOTS.forEach((s) => { student.agSlots[s] = false; });
+        student.agSlots[targetSlot] = true;
+        renderSonderBoard();
+        renderStep1AgLists();
+        saveState();
       }
 
       /** Öffnet den AG-Bearbeiten-Dialog für einen Schüler. */
@@ -1347,7 +1463,7 @@
         renderStep5();
       }
 
-      /** Board-Tab umschalten (Reguläre Zuteilung ↔ AG-Verwaltung). */
+      /** Board-Tab umschalten (Reguläre Zuteilung / AG-Verwaltung / Sonstiges). */
       function switchBoard(boardId) {
         state.activeBoard = boardId;
         document.querySelectorAll(".board-tab").forEach((tab) => {
@@ -1355,9 +1471,13 @@
         });
         byId("board-regular").classList.toggle("active", boardId === "regular");
         byId("board-ag").classList.toggle("active", boardId === "ag");
+        byId("board-sonder").classList.toggle("active", boardId === "sonder");
         if (boardId === "ag") {
           renderAgBoard();
+        } else if (boardId === "sonder") {
+          renderSonderBoard();
         }
+        applyStep4Filter();
       }
 
       // ── AG-Listen Hilfsfunktionen ──────────────────────────────────
@@ -1527,7 +1647,7 @@
         if (!student) {
           return;
         }
-        if (student.absent || student.agMember) {
+        if (student.absent || (student.agMember && !isSonderStudent(student))) {
           showMessage("Abwesende oder AG-Mitglieder sind für die normale Zuteilung gesperrt.", "warn");
           return;
         }
@@ -1584,6 +1704,41 @@
           }
         }
 
+        // ── Priority-Reservierung ────────────────────────────────────────────
+        // Schüler der konfigurierten Prioritätsklassen werden VORAB aus dem
+        // allgemeinen Pool herausgenommen. Round-Robin für andere Slots greift
+        // dann nicht mehr auf sie zu, sodass sie garantiert in ihren
+        // Prioritäts-Slots landen.
+        const priorityReserve = {};     // grade -> className -> [studentIds]
+        const priorityClassSlots = {};  // grade -> className -> Set<slot>
+
+        for (const grade of GRADES) {
+          priorityReserve[grade] = {};
+          priorityClassSlots[grade] = {};
+          const gradeConfig = state.slotPriorities[grade] || {};
+          const classQuota = {};
+
+          for (const [slot, className] of Object.entries(gradeConfig)) {
+            if (!className || !pools[grade]?.[className]) continue;
+            if (!priorityClassSlots[grade][className]) {
+              priorityClassSlots[grade][className] = new Set();
+            }
+            priorityClassSlots[grade][className].add(slot);
+            const demand = state.projects
+              .filter((p) => !p.isSpecial)
+              .reduce((sum, p) => sum + safeInt(p.demands?.[grade]?.[slot]), 0);
+            classQuota[className] = (classQuota[className] || 0) + demand;
+          }
+
+          for (const [className, quota] of Object.entries(classQuota)) {
+            const bucket = pools[grade][className] || [];
+            const count = Math.min(quota, bucket.length);
+            // splice vom Ende: die zuletzt gemischten Schüler reservieren
+            priorityReserve[grade][className] = bucket.splice(bucket.length - count);
+          }
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         const rrPointer = {};
         for (const grade of GRADES) {
           rrPointer[grade] = Math.floor(Math.random() * TRACKS.length);
@@ -1593,9 +1748,23 @@
           return Object.values(pools[grade]).reduce((sum, list) => sum + list.length, 0);
         }
 
-        function pickRoundRobin(grade, need) {
+        function pickRoundRobin(grade, need, slot = "") {
+          // Klassen, die noch reservierte Schüler für ANDERE Slots haben, überspringen.
+          // Nur wenn der aktuelle Slot einer ihrer Prioritäts-Slots ist, dürfen sie
+          // via Round-Robin eingeplant werden (dann aber als Ergänzung zum Reserve-Pool).
+          const skipClasses = new Set();
+          for (const [className, reserved] of Object.entries(priorityReserve[grade] || {})) {
+            if (reserved.length > 0 && !(priorityClassSlots[grade]?.[className]?.has(slot))) {
+              skipClasses.add(className);
+            }
+          }
+
           const picked = [];
-          const cycle = TRACKS.map((track) => `${grade}${track}`);
+          const cycle = TRACKS
+            .map((track) => `${grade}${track}`)
+            .filter((cn) => !skipClasses.has(cn));
+
+          if (!cycle.length) return picked;
 
           let guard = 0;
           while (picked.length < need && totalAvailableInGrade(grade) > 0 && guard < 4000) {
@@ -1634,7 +1803,7 @@
           return classEntries[classEntries.length - 1]?.className || null;
         }
 
-        function pickWeighted(grade, need, classWeights) {
+        function pickWeighted(grade, need, classWeights, slot = "") {
           const selected = Object.entries(classWeights)
             .filter(([className, weight]) => className.startsWith(String(grade)) && safeInt(weight) > 0)
             .map(([className, weight]) => ({ className, weight: safeInt(weight) }));
@@ -1696,10 +1865,38 @@
           // Fallback: Wenn spezifizierte Klassen komplett erschöpft sind, aus den restlichen
           // Klassen der Stufe per Round-Robin nachziehen, um unnötige Konflikte zu vermeiden.
           if (picked.length < need) {
-            const fallback = pickRoundRobin(grade, need - picked.length);
+            const fallback = pickRoundRobin(grade, need - picked.length, slot);
             picked.push(...fallback);
           }
 
+          return picked;
+        }
+
+        // Wenn für grade+slot eine Prioritätklasse konfiguriert ist, werden zuerst
+        // die reservierten Schüler dieser Klasse verwendet, dann restliche aus dem
+        // allgemeinen Pool, und schließlich Round-Robin für verbleibende Plätze.
+        function pickWithPriority(grade, need, slot) {
+          const priorityClass = (state.slotPriorities[grade] || {})[slot] || "";
+          if (!priorityClass) {
+            return pickRoundRobin(grade, need, slot);
+          }
+
+          const reserved = (priorityReserve[grade] || {})[priorityClass] || [];
+          const mainBucket = (pools[grade] || {})[priorityClass] || [];
+          const picked = [];
+
+          // 1. Aus dem reservierten Pool (wurden vorab gesichert)
+          while (picked.length < need && reserved.length > 0) {
+            picked.push(reserved.pop());
+          }
+          // 2. Aus dem allgemeinen Pool (falls Reserve aufgebraucht)
+          while (picked.length < need && mainBucket.length > 0) {
+            picked.push(mainBucket.pop());
+          }
+          // 3. Rest per Round-Robin (Prioritätsklasse ist jetzt erschöpft → wird übersprungen)
+          if (picked.length < need) {
+            picked.push(...pickRoundRobin(grade, need - picked.length, slot));
+          }
           return picked;
         }
 
@@ -1726,9 +1923,9 @@
 
               let picked = [];
               if (project.preference.mode === "specific") {
-                picked = pickWeighted(grade, need, project.preference.classes);
+                picked = pickWeighted(grade, need, project.preference.classes, slot);
               } else {
-                picked = pickRoundRobin(grade, need);
+                picked = pickWithPriority(grade, need, slot);
               }
 
               if (picked.length < need) {
@@ -1818,6 +2015,7 @@
           agProjects: state.agProjects,
           agLists: state.agLists,
           agExtra: state.agExtra,
+          slotPriorities: state.slotPriorities,
           pdf: state.pdf
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1860,6 +2058,9 @@
           ...state.pdf,
           ...(parsed.pdf || {})
         };
+        state.slotPriorities = (parsed.slotPriorities && typeof parsed.slotPriorities === "object" && !Array.isArray(parsed.slotPriorities))
+          ? parsed.slotPriorities
+          : {};
         state.conflicts = [];
 
         recalcIdCounters();
@@ -2203,10 +2404,8 @@
               continue;
             }
             if (student.agMember) {
-              const slots = getSelectedAgSlots(student);
-              const slotStr = slots.length ? slots.join(", ") : "S1";
               const pName = student.agProjectName.trim() || "AG ohne Projekt";
-              activeRows.push({ name, projekt: `AG: ${pName}`, slot: slotStr, special: false });
+              activeRows.push({ name, projekt: `AG: ${pName}`, slot: "individuell", special: false });
               continue;
             }
             const asgn = state.assignments[student.id];
@@ -2358,6 +2557,7 @@
           agProjects: state.agProjects,
           agLists: state.agLists,
           agExtra: state.agExtra,
+          slotPriorities: state.slotPriorities,
           pdf: state.pdf
         };
         try {
@@ -2419,6 +2619,12 @@
           return;
         }
 
+        // Sonderliste Slot (Sonstiges-Tab: Schüler zwischen Slot-Spalten verschieben)
+        if (zone.hasAttribute("data-sonder-list-id")) {
+          moveSonderStudentToSlot(studentId, zone.dataset.sonderListId, zone.dataset.targetSlot);
+          return;
+        }
+
         // AG-Board Dropzone (Step-4 AG-Verwaltung)
         if (zone.hasAttribute("data-ag-project")) {
           const student = getStudentById(studentId);
@@ -2432,7 +2638,7 @@
 
         // Regulärer Board-Drop
         const student = getStudentById(studentId);
-        if (student?.agMember) {
+        if (student?.agMember && !isSonderStudent(student)) {
           showMessage("AG-Mitglieder können nicht der regulären Zuteilung hinzugefuegt werden.", "warn");
           return;
         }
@@ -2440,15 +2646,10 @@
         const targetProjectId = zone.dataset.targetProjectId || "";
         const targetSlot = zone.dataset.targetSlot || "";
 
-        // Sonder-Validierung
-        if (targetProjectId) {
+        // Sonder-Validierung: Sonder-agMember dürfen nur in Sonderprojekte
+        if (targetProjectId && isSonderStudent(student)) {
           const targetProject = getProjectById(targetProjectId);
-          const studentIsSonder = isSonderStudent(student);
-          if (targetProject?.isSpecial && !studentIsSonder) {
-            showMessage("Normale Schüler können nicht in Sonderprojekte eingetragen werden.", "warn");
-            return;
-          }
-          if (!targetProject?.isSpecial && studentIsSonder) {
+          if (!targetProject?.isSpecial) {
             showMessage("Sonder-Schüler können nur in Sonderprojekte eingetragen werden.", "warn");
             return;
           }
@@ -2620,8 +2821,10 @@
           if (action === "toggle-theme") {
             const html = document.documentElement;
             const next = (html.dataset.theme || "light") === "light" ? "dark" : "light";
+            html.classList.add("theme-transitioning");
             html.dataset.theme = next;
             try { localStorage.setItem("gat_theme", next); } catch (_) {}
+            setTimeout(() => html.classList.remove("theme-transitioning"), 350);
             return;
           }
 
@@ -2632,7 +2835,7 @@
             return;
           }
 
-          if (target.id === "step4-filter-reset") {
+          if (action === "reset-step4-filter") {
             const s = byId("step4-search");
             const g = byId("step4-grade-filter");
             const c = byId("step4-class-filter");
@@ -3066,6 +3269,21 @@
 
           if (target.id === "project-order") {
             state.pdf.projectOrder = target.value === "name" ? "name" : "id";
+          }
+
+          if (target.dataset.priorityGrade) {
+            const grade = Number(target.dataset.priorityGrade);
+            const slot = target.dataset.prioritySlot;
+            if (!state.slotPriorities[grade]) {
+              state.slotPriorities[grade] = {};
+            }
+            if (target.value) {
+              state.slotPriorities[grade][slot] = target.value;
+            } else {
+              delete state.slotPriorities[grade][slot];
+            }
+            saveState();
+            return;
           }
         });
 

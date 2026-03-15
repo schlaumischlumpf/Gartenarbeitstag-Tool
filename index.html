@@ -148,6 +148,7 @@
 
       <div id="overview-step3" class="summary-card"></div>
       <div id="conflicts-step3" class="summary-card"></div>
+      <div id="slot-priorities-step3" class="summary-card"></div>
 
       <div class="summary-card">
         <h3>Vorschau aktuelle Zuteilung</h3>
@@ -186,25 +187,28 @@
       <div class="board-tabs">
         <button class="board-tab active" data-action="switch-board" data-board="regular">Reguläre Zuteilung</button>
         <button class="board-tab" data-action="switch-board" data-board="ag">AG-Verwaltung</button>
+        <button class="board-tab" data-action="switch-board" data-board="sonder">Sonstiges</button>
+      </div>
+
+      <!-- Shared Filter-Bar (gilt für alle Tabs) -->
+      <div id="step4-filter-bar" class="step4-filter-bar">
+        <input id="step4-search" type="text" placeholder="Schüler suchen…" autocomplete="off">
+        <select id="step4-grade-filter">
+          <option value="all">Alle Stufen</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+        <select id="step4-class-filter">
+          <option value="all">Alle Klassen</option>
+        </select>
+        <button type="button" id="step4-filter-reset" data-action="reset-step4-filter" title="Filter zurücksetzen">✕ Zurücksetzen</button>
       </div>
 
       <!-- Normales Board -->
       <div id="board-regular" class="board-section active">
         <div id="board-left-col">
-          <div id="step4-filter-bar" class="step4-filter-bar">
-            <input id="step4-search" type="text" placeholder="Schüler suchen…" autocomplete="off">
-            <select id="step4-grade-filter">
-              <option value="all">Alle Stufen</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-            </select>
-            <select id="step4-class-filter">
-              <option value="all">Alle Klassen</option>
-            </select>
-            <button type="button" id="step4-filter-reset" title="Filter zurücksetzen">✕ Zurücksetzen</button>
-          </div>
           <div id="manual-board" class="slot-board"></div>
         </div>
         <div class="unassigned-wrap">
@@ -215,18 +219,29 @@
 
       <!-- AG-Board -->
       <div id="board-ag" class="board-section">
-        <div class="panel-top" style="margin-bottom:0;">
-          <div>
-            <p class="tiny">AGs per Drag-and-Drop neu gruppieren. Klick auf einen Chip öffnet die Bearbeitung.</p>
+        <div id="board-ag-left-col">
+          <div class="panel-top" style="margin-bottom:0; padding-bottom:12px;">
+            <div><p class="tiny">AGs per Drag-and-Drop neu gruppieren. Klick auf einen Chip öffnet die Bearbeitung.</p></div>
+            <div class="btn-row">
+              <button type="button" class="primary" data-action="add-ag-project">AG hinzufügen</button>
+            </div>
           </div>
-          <div class="btn-row">
-            <button type="button" class="primary" data-action="add-ag-project">AG hinzufügen</button>
-          </div>
+          <div id="ag-board" class="ag-board"></div>
         </div>
-        <div id="ag-board" class="ag-board"></div>
-        <div class="ag-unassigned-wrap">
+        <div class="unassigned-wrap">
           <h3>Ohne AG-Zuteilung <span id="unassigned-ag-count" class="status-pill warn" style="display:none;"></span></h3>
           <div id="unassigned-ag-zone" class="ag-dropzone" data-dropzone="true" data-ag-project=""></div>
+        </div>
+      </div>
+
+      <!-- Sonstiges-Board (Sonderprojekte) -->
+      <div id="board-sonder" class="board-section">
+        <div id="board-sonder-left-col">
+          <div id="sonder-board" class="slot-board"></div>
+        </div>
+        <div class="unassigned-wrap">
+          <h3>Übrig (Sonder) <span id="unassigned-sonder-count" class="status-pill warn" style="display:none;"></span></h3>
+          <div id="unassigned-sonder-zone" class="dropzone" data-dropzone="true" data-target-project-id="" data-target-slot=""></div>
         </div>
       </div>
     </section>
