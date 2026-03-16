@@ -2252,14 +2252,18 @@
             y += ROW_H;
           };
 
+          const projektTitel = record.number !== 9999
+            ? `${record.number}. ${record.name}`
+            : record.name;
+
           const umbruch = () => {
             doc.addPage();
             y = 26;
-            titelBand(`${record.name} (Forts.)`);
+            titelBand(`${projektTitel} (Forts.)`);
             kopfzeile();
           };
 
-          titelBand(record.name);
+          titelBand(projektTitel);
           kopfzeile();
 
           const hatSchueler = SLOTS.some((s) => record.slots[s].length > 0);
@@ -2416,7 +2420,7 @@
             const project = getProjectById(asgn.projectId);
             activeRows.push({
               name,
-              projekt: project ? project.name : "Unbekannt",
+              projekt: project ? `${project.number}. ${project.name}` : "Unbekannt",
               slot: asgn.slot,
               special: false
             });
